@@ -1,0 +1,27 @@
+[package]
+name = "cargo-sdk"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Precompiled crate SDKs for Cargo: skip compiling crates that already live inside a shared library, using metadata released alongside it"
+readme = "README.md"
+rust-version = "1.82"
+
+[[bin]]
+name = "cargo-sdk"
+path = "src/bin/cargo-sdk.rs"
+
+[[bin]]
+name = "sdk-rustc"
+path = "src/bin/sdk-rustc.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
