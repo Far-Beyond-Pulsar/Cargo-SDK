@@ -122,11 +122,27 @@ fn a_consumer_builds_from_the_sdk_and_runs() {
     .env(var, paths)
     .output()
     .unwrap();
+    let listing = |dir: PathBuf| -> String {
+        fs::read_dir(&dir)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_default()
+    };
     assert_eq!(
         String::from_utf8_lossy(&run.stdout).trim(),
         "1 2 \"hi\"",
-        "{}",
-        String::from_utf8_lossy(&run.stderr)
+        "{}\n{var}={}\ndeps: {}\nrelease: {}",
+        String::from_utf8_lossy(&run.stderr),
+        std::env::join_paths([b.join("release").join("deps")])
+            .unwrap()
+            .to_string_lossy(),
+        listing(b.join("release").join("deps")),
+        listing(b.join("release")),
     );
 
     let _ = fs::remove_dir_all(&root);
