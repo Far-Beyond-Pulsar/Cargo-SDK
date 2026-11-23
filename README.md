@@ -1,4 +1,4 @@
-# cargo-sdk
+# Cargo SDK
 
 Precompiled crate SDKs for Cargo: build the crates inside a shared library once, and let every other build skip them.
 
