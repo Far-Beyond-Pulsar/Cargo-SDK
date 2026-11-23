@@ -15,7 +15,7 @@ use cargo_sdk::pack::{self, Options};
 use cargo_sdk::{SDK_ENV, VERBOSE_ENV};
 
 const USAGE: &str = "usage:
-  cargo sdk pack --out <dir> [--archive <file.tar.gz>] --package <name>... [-- <cargo build arguments>]
+  cargo sdk pack --out <dir> [--archive <file.tar.gz>] [--strip] --package <name>... [-- <cargo build arguments>]
       cut an SDK from the build `cargo build <arguments>` makes (a finished build is not rebuilt)
   cargo sdk exec --sdk <dir>... [--verbose] -- <command>
       run <command> (usually `cargo build ...`) with the wrapper serving the SDK
@@ -53,13 +53,14 @@ fn main() -> ExitCode {
 }
 
 fn run_pack(args: &[String]) -> ExitCode {
-    let (mut roots, mut out, mut archive) = (Vec::new(), None, None);
+    let (mut roots, mut out, mut archive, mut strip) = (Vec::new(), None, None, false);
     let mut cargo_args = Vec::new();
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--out" => out = iter.next().map(PathBuf::from),
             "--archive" => archive = iter.next().map(PathBuf::from),
+            "--strip" => strip = true,
             "--package" | "-p" => roots.extend(iter.next().cloned()),
             "--" => {
                 cargo_args.extend(iter.by_ref().cloned());
@@ -77,12 +78,13 @@ fn run_pack(args: &[String]) -> ExitCode {
         roots,
         cargo_args,
         out: out.clone(),
+        strip,
     }) {
         Ok(summary) => {
             let mb = |b: u64| b as f64 / 1_048_576.0;
             eprintln!(
-                "cargo sdk: {} library crates and {} shared libraries -> {} ({:.0} MB of rlibs stored as {:.0} MB)",
-                summary.library_crates, summary.shared_libraries, out.display(), mb(summary.original_bytes), mb(summary.stored_bytes)
+                "cargo sdk: {} library crates, {} proc-macros and {} shared libraries -> {} ({:.0} MB of rlibs stored as {:.0} MB)",
+                summary.library_crates, summary.proc_macros, summary.shared_libraries, out.display(), mb(summary.original_bytes), mb(summary.stored_bytes)
             );
             if let Some(archive) = archive {
                 if let Err(error) = cargo_sdk::archive::create(&out, &archive) {

@@ -23,12 +23,16 @@ pub struct Options {
     /// What follows `cargo build`: the build to cut the SDK from (profile, target, features, `-p`).
     pub cargo_args: Vec<String>,
     pub out: PathBuf,
+    /// Store metadata-only stubs instead of whole rlibs (smaller; wrong for crates a build script or
+    /// proc-macro links, which need the code).
+    pub strip: bool,
 }
 
 #[derive(Default, Debug)]
 pub struct Summary {
     pub library_crates: usize,
     pub shared_libraries: usize,
+    pub proc_macros: usize,
     pub skipped: Vec<String>,
     pub original_bytes: u64,
     pub stored_bytes: u64,
@@ -146,6 +150,17 @@ fn extra_of(crate_name: &str, rlib_file: &str) -> Option<String> {
     extra.starts_with('-').then(|| extra.to_owned())
 }
 
+/// `-<hash>` of a proc-macro's `<name>-<hash>.dll` (`lib<name>-<hash>.so`, `.dylib`).
+fn extra_of_library(crate_name: &str, file: &str) -> Option<String> {
+    let stem = file.rsplit_once('.')?.0;
+    let stem = stem.strip_prefix("lib").unwrap_or(stem);
+    let extra = stem.strip_prefix(crate_name)?;
+    (extra.starts_with('-')
+        && extra.len() == 17
+        && extra[1..].bytes().all(|b| b.is_ascii_hexdigit()))
+    .then(|| extra.to_owned())
+}
+
 fn file_name(path: &Path) -> String {
     path.file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -233,7 +248,45 @@ pub fn pack(options: &Options) -> Result<Summary, String> {
             idents.insert(artifact.package_id.clone(), ident);
         }
 
-        if artifact.has("proc-macro") || artifact.has("bin") || artifact.custom_build {
+        if artifact.has("proc-macro") && !artifact.custom_build {
+            // A proc-macro runs on the build machine and is loaded by crates compiled against it: one compiled
+            // anew has other metadata (paths of build-script output are part of it) than the one the stored
+            // rlibs were built against, and rustc then refuses those rlibs. So it is stored as built.
+            let mut copy = Vec::new();
+            let mut extra = None;
+            for file in &artifact.files {
+                let name = file_name(file);
+                if extra.is_none() {
+                    extra = extra_of_library(&crate_name, &name);
+                }
+                let stored = format!("units/{name}");
+                let size = fs::copy(file, options.out.join(&stored))
+                    .map_err(|e| format!("{}: {e}", file.display()))?;
+                summary.original_bytes += size;
+                summary.stored_bytes += size;
+                copy.push(Copy { stored, name });
+            }
+            let Some(extra) = extra else {
+                summary.skipped.push(format!(
+                    "{crate_name} (proc-macro with unrecognised file names)"
+                ));
+                continue;
+            };
+            summary.proc_macros += 1;
+            units.insert(
+                (crate_name.clone(), extra.clone()),
+                Unit {
+                    crate_name,
+                    extra,
+                    crate_types: artifact.crate_types,
+                    externs: Vec::new(),
+                    stub: None,
+                    copy,
+                },
+            );
+            continue;
+        }
+        if artifact.has("bin") || artifact.custom_build {
             summary
                 .skipped
                 .push(format!("{crate_name} ({})", artifact.crate_types.join(",")));
@@ -299,18 +352,30 @@ pub fn pack(options: &Options) -> Result<Summary, String> {
         let rlib_bytes =
             fs::read(rlib_path).map_err(|e| format!("{}: {e}", rlib_path.display()))?;
         let rmeta = fs::read(rmeta_path).map_err(|e| format!("{}: {e}", rmeta_path.display()))?;
-        let stub = rlib::strip(&rlib_bytes).map_err(|e| format!("{}: {e}", rlib_path.display()))?;
-        let offset = rlib::find(&stub, &rmeta).ok_or_else(|| {
-            format!(
-                "{}: its metadata is not inside its rlib",
-                rlib_path.display()
-            )
-        })?;
         let stored = format!("units/{}", file_name(rlib_path));
+        let (stub, offset, rmeta_stored) = if options.strip {
+            // Metadata only: right for a consumer that links the library's dylib and runs no build script or
+            // proc-macro against these crates (those need the machine code).
+            let stub =
+                rlib::strip(&rlib_bytes).map_err(|e| format!("{}: {e}", rlib_path.display()))?;
+            let offset = rlib::find(&stub, &rmeta).ok_or_else(|| {
+                format!(
+                    "{}: its metadata is not inside its rlib",
+                    rlib_path.display()
+                )
+            })?;
+            (stub, offset as u64, None)
+        } else {
+            // The whole rlib, and the `.rmeta` beside it: the same file serves every use of the unit.
+            let rmeta_stored = format!("units/{}", file_name(rmeta_path));
+            fs::write(options.out.join(&rmeta_stored), &rmeta).map_err(|e| e.to_string())?;
+            (rlib_bytes.clone(), 0, Some(rmeta_stored))
+        };
         fs::write(options.out.join(&stored), &stub).map_err(|e| e.to_string())?;
         summary.library_crates += 1;
         summary.original_bytes += rlib_bytes.len() as u64;
-        summary.stored_bytes += stub.len() as u64;
+        summary.stored_bytes +=
+            stub.len() as u64 + if options.strip { 0 } else { rmeta.len() as u64 };
         units.insert(
             (crate_name.clone(), extra.clone()),
             Unit {
@@ -320,8 +385,9 @@ pub fn pack(options: &Options) -> Result<Summary, String> {
                 externs: Vec::new(),
                 stub: Some(Stub {
                     stored,
-                    rmeta_offset: offset as u64,
+                    rmeta_offset: offset,
                     rmeta_len: rmeta.len() as u64,
+                    rmeta_stored,
                 }),
                 copy: Vec::new(),
             },

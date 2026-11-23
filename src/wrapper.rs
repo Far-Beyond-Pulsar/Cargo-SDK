@@ -167,10 +167,15 @@ fn serve_stub(
     }
     let stored = dir.join(&stub.stored);
     if wants("metadata") {
-        fs::write(
-            &rmeta,
-            read_slice(&stored, stub.rmeta_offset, stub.rmeta_len)?,
-        )?;
+        match &stub.rmeta_stored {
+            Some(file) => {
+                fs::copy(dir.join(file), &rmeta)?;
+            }
+            None => fs::write(
+                &rmeta,
+                read_slice(&stored, stub.rmeta_offset, stub.rmeta_len)?,
+            )?,
+        }
         announce(request, &rmeta, "metadata");
     }
     if wants("link") {
@@ -213,6 +218,12 @@ pub fn serve(args: &[String]) -> Option<i32> {
     let result = if is_library {
         let (dir, unit) = candidates.iter().find(|(_, unit)| unit.stub.is_some())?;
         serve_stub(&request, dir, unit, unit.stub.as_ref()?, &out)
+    } else if types.iter().any(|t| t == "proc-macro") {
+        // Same crate name and hash: the same proc-macro, built by the same compiler.
+        let (dir, unit) = candidates.iter().find(|(_, unit)| {
+            !unit.copy.is_empty() && unit.crate_types.iter().any(|t| t == "proc-macro")
+        })?;
+        serve_shared(&request, dir, unit, &out)
     } else if is_shared {
         let wanted = externs_of(&request);
         let (dir, unit) = candidates

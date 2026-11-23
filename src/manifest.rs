@@ -24,11 +24,14 @@ pub struct Copy {
 /// A crate compiled as a library (`rlib`): answered with a stub rlib and the metadata cut from it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Stub {
-    /// The stub rlib, relative to the SDK directory.
+    /// The rlib (whole, or a metadata-only stub), relative to the SDK directory.
     pub stored: String,
-    /// Where the plain `.rmeta` file starts inside it, and how long it is.
+    /// Where the plain `.rmeta` file starts inside a stub, and how long it is.
     pub rmeta_offset: u64,
     pub rmeta_len: u64,
+    /// The plain `.rmeta` file, when the rlib is stored whole.
+    #[serde(default)]
+    pub rmeta_stored: Option<String>,
 }
 
 /// One compile unit the SDK can answer for.

@@ -13,9 +13,14 @@ For a large dependency graph that is most of the build, repeated by every consum
 
 An rlib is an `ar` archive: a symbol table, `lib.rmeta` (the metadata), `lib.rmeta-link`, and the machine code. When a
 crate is part of a dylib that is also being linked, rustc loads its metadata and never reads the machine code. So an
-rlib with the code removed (a *stub rlib*) is a complete answer to "compile this crate" for any build that links the
-dylib. The standalone `.rmeta` file Cargo passes between crates when it pipelines compilation is the same bytes as the
-rlib's `lib.rmeta` member, so one stored file serves both.
+rlib with the code removed (a *stub rlib*, `cargo sdk pack --strip`) is a complete answer to "compile this crate" for a
+build that only links the dylib.
+
+It is not an answer for everything: build scripts and proc-macros run on the build machine and link the same crates
+(same crate, same hash), and they need the code. An SDK therefore stores whole rlibs by default, with the standalone
+`.rmeta` file Cargo passes between crates when it pipelines compilation. It also stores proc-macros as built: rlibs
+record the metadata hash of the proc-macros they were compiled against, and a proc-macro compiled again in another
+target directory has a different one, so `rustc` refuses the stored rlibs (see [benchmarks.md](benchmarks.md)).
 
 ## The pieces
 
@@ -43,8 +48,8 @@ only served if that one was served too.
 
 ## What it cannot do
 
-- **Proc-macros and build scripts are still compiled.** They run on the build machine and are not part of the library.
-  For crates that compile C code in a build script, that can be a large share of what is left.
+- **Build scripts are still compiled and run.** For crates that compile C code in a build script, that can be a large
+  share of what is left. (Proc-macros are stored and served as built.)
 - **An SDK is for one target and one toolchain.** Build one per platform, with the compiler you build with.
 - **The feature set must be identical.** A shared library's contents depend on the features Cargo unifies across the
   build; if consumers can enable different features than the build the SDK was cut from, nothing matches. Pin them with a
