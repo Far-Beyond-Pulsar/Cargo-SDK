@@ -1,0 +1,38 @@
+name: Set up Cargo SDK
+description: Downloads a released `cargo-sdk` and `sdk-rustc` for the runner and puts them on PATH. Nothing is compiled.
+
+inputs:
+  version:
+    description: Release tag to install (`v0.1.0`), or `latest`.
+    default: latest
+  token:
+    description: Token used to read the release.
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        VERSION: ${{ inputs.version }}
+        RUNNER_OS_NAME: ${{ runner.os }}
+        RUNNER_ARCH_NAME: ${{ runner.arch }}
+      run: |
+        case "$RUNNER_OS_NAME-$RUNNER_ARCH_NAME" in
+          Linux-X64)    platform=linux-x86_64 ;;
+          Windows-X64)  platform=windows-x86_64 ;;
+          Windows-X86)  platform=windows-i686 ;;
+          Windows-ARM64) platform=windows-arm64 ;;
+          macOS-X64)    platform=macos-x86_64 ;;
+          macOS-ARM64)  platform=macos-arm64 ;;
+          *) echo "no cargo-sdk release for $RUNNER_OS_NAME-$RUNNER_ARCH_NAME" >&2; exit 1 ;;
+        esac
+        dir="$RUNNER_TEMP/cargo-sdk"
+        mkdir -p "$dir"
+        tag_args=()
+        if [ "$VERSION" != latest ]; then tag_args=("$VERSION"); fi
+        gh release download "${tag_args[@]}" --repo Far-Beyond-Pulsar/Cargo-SDK \
+          --pattern "cargo-sdk-$platform.tar.gz" --dir "$dir" --clobber
+        tar -xzf "$dir/cargo-sdk-$platform.tar.gz" -C "$dir"
+        echo "$dir" >> "$GITHUB_PATH"

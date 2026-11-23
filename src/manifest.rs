@@ -62,9 +62,14 @@ impl Manifest {
     pub fn read(dir: &Path) -> Result<Self, String> {
         let path = dir.join(FILE);
         let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let manifest: Manifest = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+        let manifest: Manifest =
+            serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
         if manifest.format != FORMAT {
-            return Err(format!("{}: SDK format {} (this build reads {FORMAT})", path.display(), manifest.format));
+            return Err(format!(
+                "{}: SDK format {} (this build reads {FORMAT})",
+                path.display(),
+                manifest.format
+            ));
         }
         Ok(manifest)
     }
@@ -86,10 +91,15 @@ impl Index {
         let mut units: HashMap<(String, String), Vec<(PathBuf, Unit)>> = HashMap::new();
         let mut rustc = None;
         for dir in dirs {
-            let Ok(manifest) = Manifest::read(dir) else { continue };
+            let Ok(manifest) = Manifest::read(dir) else {
+                continue;
+            };
             rustc.get_or_insert(manifest.rustc.clone());
             for unit in manifest.units {
-                units.entry((unit.crate_name.clone(), unit.extra.clone())).or_default().push((dir.clone(), unit));
+                units
+                    .entry((unit.crate_name.clone(), unit.extra.clone()))
+                    .or_default()
+                    .push((dir.clone(), unit));
             }
         }
         Self { units, rustc }
@@ -98,7 +108,9 @@ impl Index {
     /// The units answering to this name and extra filename: one for a library crate (the hash is in the key),
     /// possibly several for a shared library (no hash: see `Unit::externs`).
     pub fn get(&self, crate_name: &str, extra: &str) -> &[(PathBuf, Unit)] {
-        self.units.get(&(crate_name.to_owned(), extra.to_owned())).map_or(&[], Vec::as_slice)
+        self.units
+            .get(&(crate_name.to_owned(), extra.to_owned()))
+            .map_or(&[], Vec::as_slice)
     }
 
     pub fn len(&self) -> usize {

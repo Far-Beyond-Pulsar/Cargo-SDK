@@ -35,7 +35,11 @@ fn members(archive: &[u8]) -> Result<Vec<Member<'_>>, String> {
         if end > archive.len() {
             return Err(format!("member `{name}` runs past the end of the archive"));
         }
-        out.push(Member { header, name, data: &archive[start..end] });
+        out.push(Member {
+            header,
+            name,
+            data: &archive[start..end],
+        });
         at = end + (size % 2);
     }
     Ok(out)
@@ -86,7 +90,15 @@ mod tests {
     fn archive(members: &[(&str, &[u8])]) -> Vec<u8> {
         let mut out = MAGIC.to_vec();
         for (name, data) in members {
-            let header = format!("{:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`\n", name, "0", "0", "0", "644", data.len());
+            let header = format!(
+                "{:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`\n",
+                name,
+                "0",
+                "0",
+                "0",
+                "644",
+                data.len()
+            );
             out.extend_from_slice(header.as_bytes());
             out.extend_from_slice(data);
             if data.len() % 2 == 1 {
@@ -98,9 +110,17 @@ mod tests {
 
     #[test]
     fn strip_keeps_only_the_metadata_members() {
-        let rlib = archive(&[("/", b"symbols"), ("lib.rmeta/", b"rust-metadata!"), ("code.o/", b"machine code")]);
+        let rlib = archive(&[
+            ("/", b"symbols"),
+            ("lib.rmeta/", b"rust-metadata!"),
+            ("code.o/", b"machine code"),
+        ]);
         let stripped = strip(&rlib).unwrap();
-        let names: Vec<_> = members(&stripped).unwrap().into_iter().map(|m| m.name).collect();
+        let names: Vec<_> = members(&stripped)
+            .unwrap()
+            .into_iter()
+            .map(|m| m.name)
+            .collect();
         assert_eq!(names, ["lib.rmeta/"]);
         assert!(stripped.len() < rlib.len());
     }

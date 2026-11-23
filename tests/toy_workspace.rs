@@ -15,10 +15,22 @@ fn write(root: &Path, file: &str, text: &str) {
 fn workspace() -> PathBuf {
     let root = std::env::temp_dir().join(format!("cargo-sdk-toy-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
-    write(&root, "Cargo.toml", "[workspace]\nmembers = [\"inner\", \"shared\", \"app\"]\nresolver = \"2\"\n");
+    write(
+        &root,
+        "Cargo.toml",
+        "[workspace]\nmembers = [\"inner\", \"shared\", \"app\"]\nresolver = \"2\"\n",
+    );
     // The shared library shares `std` with its consumers.
-    write(&root, ".cargo/config.toml", "[build]\nrustflags = [\"-C\", \"prefer-dynamic\"]\n");
-    write(&root, "inner/Cargo.toml", "[package]\nname = \"inner\"\nversion = \"0.1.0\"\nedition = \"2021\"\n");
+    write(
+        &root,
+        ".cargo/config.toml",
+        "[build]\nrustflags = [\"-C\", \"prefer-dynamic\"]\n",
+    );
+    write(
+        &root,
+        "inner/Cargo.toml",
+        "[package]\nname = \"inner\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    );
     write(
         &root,
         "inner/src/lib.rs",
@@ -40,10 +52,18 @@ fn cargo(root: &Path, target: &Path) -> Command {
 #[test]
 fn a_consumer_builds_from_the_sdk_and_runs() {
     let root = workspace();
-    let (a, b, sdk) = (root.join("target-a"), root.join("target-b"), root.join("sdk"));
+    let (a, b, sdk) = (
+        root.join("target-a"),
+        root.join("target-b"),
+        root.join("sdk"),
+    );
 
     // 1. The shared library, built once.
-    assert!(cargo(&root, &a).args(["build", "--release", "-p", "shared"]).status().unwrap().success());
+    assert!(cargo(&root, &a)
+        .args(["build", "--release", "-p", "shared"])
+        .status()
+        .unwrap()
+        .success());
 
     // 2. The SDK, cut from that build.
     let status = Command::new(env!("CARGO_BIN_EXE_cargo-sdk"))
@@ -67,15 +87,47 @@ fn a_consumer_builds_from_the_sdk_and_runs() {
         .unwrap();
     let log = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{log}");
-    assert!(log.contains("served inner-"), "the library crate was compiled, not served:\n{log}");
-    assert!(log.contains("served shared"), "the shared library was compiled, not served:\n{log}");
+    assert!(
+        log.contains("served inner-"),
+        "the library crate was compiled, not served:\n{log}"
+    );
+    assert!(
+        log.contains("served shared"),
+        "the shared library was compiled, not served:\n{log}"
+    );
 
     // 4. It runs: both libraries are found, and `inner`'s state exists once.
-    let libdir = String::from_utf8(Command::new("rustc").args(["--print", "target-libdir"]).output().unwrap().stdout).unwrap();
-    let var = if cfg!(windows) { "PATH" } else if cfg!(target_os = "macos") { "DYLD_LIBRARY_PATH" } else { "LD_LIBRARY_PATH" };
-    let paths = std::env::join_paths([b.join("release").join("deps"), PathBuf::from(libdir.trim())]).unwrap();
-    let run = Command::new(b.join("release").join(format!("app{}", std::env::consts::EXE_SUFFIX))).env(var, paths).output().unwrap();
-    assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "1 2 \"hi\"", "{}", String::from_utf8_lossy(&run.stderr));
+    let libdir = String::from_utf8(
+        Command::new("rustc")
+            .args(["--print", "target-libdir"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    let var = if cfg!(windows) {
+        "PATH"
+    } else if cfg!(target_os = "macos") {
+        "DYLD_LIBRARY_PATH"
+    } else {
+        "LD_LIBRARY_PATH"
+    };
+    let paths =
+        std::env::join_paths([b.join("release").join("deps"), PathBuf::from(libdir.trim())])
+            .unwrap();
+    let run = Command::new(
+        b.join("release")
+            .join(format!("app{}", std::env::consts::EXE_SUFFIX)),
+    )
+    .env(var, paths)
+    .output()
+    .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&run.stdout).trim(),
+        "1 2 \"hi\"",
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
 
     let _ = fs::remove_dir_all(&root);
 }

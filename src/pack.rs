@@ -48,7 +48,10 @@ fn cargo() -> Command {
 
 fn rustc_version() -> Result<String, String> {
     let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".into());
-    let output = Command::new(rustc).arg("-vV").output().map_err(|e| format!("rustc -vV: {e}"))?;
+    let output = Command::new(rustc)
+        .arg("-vV")
+        .output()
+        .map_err(|e| format!("rustc -vV: {e}"))?;
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
@@ -77,7 +80,10 @@ fn graph(roots: &[String], cargo_args: &[String]) -> Result<Graph, String> {
         .output()
         .map_err(|e| format!("cargo metadata: {e}"))?;
     if !output.status.success() {
-        return Err(format!("cargo metadata failed:\n{}", String::from_utf8_lossy(&output.stderr)));
+        return Err(format!(
+            "cargo metadata failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
     }
     let metadata: Value = serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())?;
     let mut by_name: HashMap<&str, Vec<&str>> = HashMap::new();
@@ -88,24 +94,42 @@ fn graph(roots: &[String], cargo_args: &[String]) -> Result<Graph, String> {
     }
     let mut reach: HashMap<&str, Vec<&str>> = HashMap::new();
     let mut externs: HashMap<String, Vec<String>> = HashMap::new();
-    for node in metadata["resolve"]["nodes"].as_array().into_iter().flatten() {
-        let Some(id) = node["id"].as_str() else { continue };
+    for node in metadata["resolve"]["nodes"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        let Some(id) = node["id"].as_str() else {
+            continue;
+        };
         let entry = reach.entry(id).or_default();
         for dep in node["deps"].as_array().into_iter().flatten() {
-            let Some(pkg) = dep["pkg"].as_str() else { continue };
+            let Some(pkg) = dep["pkg"].as_str() else {
+                continue;
+            };
             let kinds: Vec<&Value> = dep["dep_kinds"].as_array().into_iter().flatten().collect();
-            if kinds.iter().any(|kind| matches!(kind["kind"].as_str(), None | Some("build"))) {
+            if kinds
+                .iter()
+                .any(|kind| matches!(kind["kind"].as_str(), None | Some("build")))
+            {
                 entry.push(pkg);
             }
             if kinds.iter().any(|kind| kind["kind"].is_null()) {
-                externs.entry(id.to_owned()).or_default().push(pkg.to_owned());
+                externs
+                    .entry(id.to_owned())
+                    .or_default()
+                    .push(pkg.to_owned());
             }
         }
     }
     let mut closure: HashSet<String> = HashSet::new();
     let mut stack: Vec<&str> = Vec::new();
     for root in roots {
-        stack.extend(by_name.get(root.as_str()).ok_or_else(|| format!("no package named `{root}`"))?);
+        stack.extend(
+            by_name
+                .get(root.as_str())
+                .ok_or_else(|| format!("no package named `{root}`"))?,
+        );
     }
     while let Some(id) = stack.pop() {
         if closure.insert(id.to_owned()) {
@@ -123,7 +147,9 @@ fn extra_of(crate_name: &str, rlib_file: &str) -> Option<String> {
 }
 
 fn file_name(path: &Path) -> String {
-    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 /// One `compiler-artifact` message, as far as packing cares.
@@ -138,14 +164,30 @@ struct Artifact {
 impl Artifact {
     fn parse(message: &Value) -> Self {
         let strings = |value: &Value| -> Vec<String> {
-            value.as_array().into_iter().flatten().filter_map(|v| v.as_str().map(str::to_owned)).collect()
+            value
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
         };
         Self {
-            package_id: message["package_id"].as_str().unwrap_or_default().to_owned(),
-            crate_name: message["target"]["name"].as_str().unwrap_or_default().replace('-', "_"),
+            package_id: message["package_id"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+            crate_name: message["target"]["name"]
+                .as_str()
+                .unwrap_or_default()
+                .replace('-', "_"),
             crate_types: strings(&message["target"]["crate_types"]),
-            custom_build: strings(&message["target"]["kind"]).iter().any(|k| k == "custom-build"),
-            files: strings(&message["filenames"]).into_iter().map(PathBuf::from).collect(),
+            custom_build: strings(&message["target"]["kind"])
+                .iter()
+                .any(|k| k == "custom-build"),
+            files: strings(&message["filenames"])
+                .into_iter()
+                .map(PathBuf::from)
+                .collect(),
         }
     }
 
@@ -172,7 +214,9 @@ pub fn pack(options: &Options) -> Result<Summary, String> {
     // How each package of the closure is named to rustc by a dependent: see `ident_of_path`.
     let mut idents: HashMap<String, String> = HashMap::new();
     for line in BufReader::new(child.stdout.take().ok_or("no cargo output")?).lines() {
-        let Ok(message) = serde_json::from_str::<Value>(&line.map_err(|e| e.to_string())?) else { continue };
+        let Ok(message) = serde_json::from_str::<Value>(&line.map_err(|e| e.to_string())?) else {
+            continue;
+        };
         if message["reason"] != "compiler-artifact" {
             continue;
         }
@@ -181,12 +225,18 @@ pub fn pack(options: &Options) -> Result<Summary, String> {
             continue;
         }
         let crate_name = artifact.crate_name.clone();
-        if let Some(ident) = artifact.files.iter().find_map(|f| crate::ident_of_path(&f.to_string_lossy())) {
+        if let Some(ident) = artifact
+            .files
+            .iter()
+            .find_map(|f| crate::ident_of_path(&f.to_string_lossy()))
+        {
             idents.insert(artifact.package_id.clone(), ident);
         }
 
         if artifact.has("proc-macro") || artifact.has("bin") || artifact.custom_build {
-            summary.skipped.push(format!("{crate_name} ({})", artifact.crate_types.join(",")));
+            summary
+                .skipped
+                .push(format!("{crate_name} ({})", artifact.crate_types.join(",")));
             continue;
         }
         if artifact.has("dylib") || artifact.has("cdylib") {
@@ -194,7 +244,8 @@ pub fn pack(options: &Options) -> Result<Summary, String> {
             for file in &artifact.files {
                 let name = file_name(file);
                 let stored = format!("units/{name}");
-                let size = fs::copy(file, options.out.join(&stored)).map_err(|e| format!("{}: {e}", file.display()))?;
+                let size = fs::copy(file, options.out.join(&stored))
+                    .map_err(|e| format!("{}: {e}", file.display()))?;
                 summary.original_bytes += size;
                 summary.stored_bytes += size;
                 copy.push(Copy { stored, name });
@@ -211,25 +262,50 @@ pub fn pack(options: &Options) -> Result<Summary, String> {
             summary.shared_libraries += 1;
             units.insert(
                 (crate_name.clone(), String::new()),
-                Unit { crate_name, extra: String::new(), crate_types: artifact.crate_types, externs, stub: None, copy },
+                Unit {
+                    crate_name,
+                    extra: String::new(),
+                    crate_types: artifact.crate_types,
+                    externs,
+                    stub: None,
+                    copy,
+                },
             );
             continue;
         }
         let (Some(rlib_path), Some(rmeta_path)) = (
-            artifact.files.iter().find(|f| f.extension().is_some_and(|e| e == "rlib")),
-            artifact.files.iter().find(|f| f.extension().is_some_and(|e| e == "rmeta")),
+            artifact
+                .files
+                .iter()
+                .find(|f| f.extension().is_some_and(|e| e == "rlib")),
+            artifact
+                .files
+                .iter()
+                .find(|f| f.extension().is_some_and(|e| e == "rmeta")),
         ) else {
-            summary.skipped.push(format!("{crate_name} (no rlib and rmeta in {:?})", artifact.files));
+            summary.skipped.push(format!(
+                "{crate_name} (no rlib and rmeta in {:?})",
+                artifact.files
+            ));
             continue;
         };
         let Some(extra) = extra_of(&crate_name, &file_name(rlib_path)) else {
-            summary.skipped.push(format!("{crate_name} (unrecognised file name {})", file_name(rlib_path)));
+            summary.skipped.push(format!(
+                "{crate_name} (unrecognised file name {})",
+                file_name(rlib_path)
+            ));
             continue;
         };
-        let rlib_bytes = fs::read(rlib_path).map_err(|e| format!("{}: {e}", rlib_path.display()))?;
+        let rlib_bytes =
+            fs::read(rlib_path).map_err(|e| format!("{}: {e}", rlib_path.display()))?;
         let rmeta = fs::read(rmeta_path).map_err(|e| format!("{}: {e}", rmeta_path.display()))?;
         let stub = rlib::strip(&rlib_bytes).map_err(|e| format!("{}: {e}", rlib_path.display()))?;
-        let offset = rlib::find(&stub, &rmeta).ok_or_else(|| format!("{}: its metadata is not inside its rlib", rlib_path.display()))?;
+        let offset = rlib::find(&stub, &rmeta).ok_or_else(|| {
+            format!(
+                "{}: its metadata is not inside its rlib",
+                rlib_path.display()
+            )
+        })?;
         let stored = format!("units/{}", file_name(rlib_path));
         fs::write(options.out.join(&stored), &stub).map_err(|e| e.to_string())?;
         summary.library_crates += 1;
@@ -242,7 +318,11 @@ pub fn pack(options: &Options) -> Result<Summary, String> {
                 extra,
                 crate_types: artifact.crate_types,
                 externs: Vec::new(),
-                stub: Some(Stub { stored, rmeta_offset: offset as u64, rmeta_len: rmeta.len() as u64 }),
+                stub: Some(Stub {
+                    stored,
+                    rmeta_offset: offset as u64,
+                    rmeta_len: rmeta.len() as u64,
+                }),
                 copy: Vec::new(),
             },
         );
@@ -252,6 +332,11 @@ pub fn pack(options: &Options) -> Result<Summary, String> {
     }
     let mut units: Vec<Unit> = units.into_values().collect();
     units.sort_by(|a, b| (&a.crate_name, &a.extra).cmp(&(&b.crate_name, &b.extra)));
-    Manifest { format: FORMAT, rustc: rustc_version()?, units }.write(&options.out)?;
+    Manifest {
+        format: FORMAT,
+        rustc: rustc_version()?,
+        units,
+    }
+    .write(&options.out)?;
     Ok(summary)
 }

@@ -30,7 +30,10 @@ pub struct Request {
 fn expand(args: &[String]) -> Vec<String> {
     let mut out = Vec::with_capacity(args.len());
     for arg in args {
-        match arg.strip_prefix('@').and_then(|path| fs::read_to_string(path).ok()) {
+        match arg
+            .strip_prefix('@')
+            .and_then(|path| fs::read_to_string(path).ok())
+        {
             Some(text) => out.extend(text.lines().map(str::to_owned)),
             None => out.push(arg.clone()),
         }
@@ -60,7 +63,10 @@ pub fn parse(args: &[String]) -> Option<Request> {
         } else if let Some(v) = value(&mut i, "--out-dir") {
             request.out_dir = Some(PathBuf::from(v));
         } else if let Some(v) = value(&mut i, "--emit") {
-            request.emit.extend(v.split(',').map(|e| e.split('=').next().unwrap_or_default().to_owned()));
+            request.emit.extend(
+                v.split(',')
+                    .map(|e| e.split('=').next().unwrap_or_default().to_owned()),
+            );
         } else if let Some(v) = value(&mut i, "--extern") {
             if let Some((_, path)) = v.rsplit_once('=') {
                 request.externs.push(path.to_owned());
@@ -85,7 +91,11 @@ pub fn parse(args: &[String]) -> Option<Request> {
 
 /// What a compile was given as dependencies, named as the SDK names them: sorted.
 pub fn externs_of(request: &Request) -> Vec<String> {
-    let mut idents: Vec<String> = request.externs.iter().filter_map(|path| crate::ident_of_path(path)).collect();
+    let mut idents: Vec<String> = request
+        .externs
+        .iter()
+        .filter_map(|path| crate::ident_of_path(path))
+        .collect();
     idents.sort();
     idents
 }
@@ -121,11 +131,22 @@ fn read_slice(path: &Path, offset: u64, len: u64) -> std::io::Result<Vec<u8>> {
     bytes
         .get(offset..offset + len)
         .map(<[u8]>::to_vec)
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "stub shorter than recorded"))
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "stub shorter than recorded",
+            )
+        })
 }
 
 /// Writes what rustc would for a library crate: the dep-info file, the `.rmeta` and the `.rlib`.
-fn serve_stub(request: &Request, dir: &Path, unit: &Unit, stub: &Stub, out: &Path) -> std::io::Result<()> {
+fn serve_stub(
+    request: &Request,
+    dir: &Path,
+    unit: &Unit,
+    stub: &Stub,
+    out: &Path,
+) -> std::io::Result<()> {
     let base = format!("{}{}", request.crate_name, unit.extra);
     let (info, rmeta, rlib) = (
         out.join(format!("{base}.d")),
@@ -135,13 +156,21 @@ fn serve_stub(request: &Request, dir: &Path, unit: &Unit, stub: &Stub, out: &Pat
     let wants = |emit: &str| request.emit.iter().any(|e| e == emit);
     if wants("dep-info") {
         // No source files: Cargo never rebuilds this unit because a source changed.
-        let text = format!("{}: \n\n{}: \n\n{}: \n", info.display(), rlib.display(), rmeta.display());
+        let text = format!(
+            "{}: \n\n{}: \n\n{}: \n",
+            info.display(),
+            rlib.display(),
+            rmeta.display()
+        );
         fs::write(&info, text)?;
         announce(request, &info, "dep-info");
     }
     let stored = dir.join(&stub.stored);
     if wants("metadata") {
-        fs::write(&rmeta, read_slice(&stored, stub.rmeta_offset, stub.rmeta_len)?)?;
+        fs::write(
+            &rmeta,
+            read_slice(&stored, stub.rmeta_offset, stub.rmeta_len)?,
+        )?;
         announce(request, &rmeta, "metadata");
     }
     if wants("link") {
@@ -186,7 +215,9 @@ pub fn serve(args: &[String]) -> Option<i32> {
         serve_stub(&request, dir, unit, unit.stub.as_ref()?, &out)
     } else if is_shared {
         let wanted = externs_of(&request);
-        let (dir, unit) = candidates.iter().find(|(_, unit)| !unit.copy.is_empty() && unit.externs == wanted)?;
+        let (dir, unit) = candidates
+            .iter()
+            .find(|(_, unit)| !unit.copy.is_empty() && unit.externs == wanted)?;
         if !shared_dependencies_were_served(&request) {
             return None;
         }
@@ -204,7 +235,10 @@ pub fn serve(args: &[String]) -> Option<i32> {
         }
         Err(error) => {
             // A broken SDK entry must not break the build: compile it.
-            eprintln!("sdk-rustc: {}{}: {error}; compiling it", request.crate_name, request.extra);
+            eprintln!(
+                "sdk-rustc: {}{}: {error}; compiling it",
+                request.crate_name, request.extra
+            );
             None
         }
     }
@@ -239,10 +273,21 @@ mod tests {
     #[test]
     fn a_cargo_compile_is_read() {
         let request = parse(&args(&[
-            "--crate-name", "serde", "--edition=2021", "src/lib.rs", "--error-format=json",
-            "--json=diagnostic-rendered-ansi,artifacts,future-incompat", "--crate-type", "lib",
-            "--emit=dep-info,metadata,link", "-C", "metadata=abc", "-C", "extra-filename=-abc",
-            "--out-dir", "target/debug/deps",
+            "--crate-name",
+            "serde",
+            "--edition=2021",
+            "src/lib.rs",
+            "--error-format=json",
+            "--json=diagnostic-rendered-ansi,artifacts,future-incompat",
+            "--crate-type",
+            "lib",
+            "--emit=dep-info,metadata,link",
+            "-C",
+            "metadata=abc",
+            "-C",
+            "extra-filename=-abc",
+            "--out-dir",
+            "target/debug/deps",
         ]))
         .unwrap();
         assert_eq!(request.crate_name, "serde");

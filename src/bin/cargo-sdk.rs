@@ -67,11 +67,17 @@ fn run_pack(args: &[String]) -> ExitCode {
             other => return fail(&format!("unknown argument `{other}`")),
         }
     }
-    let Some(out) = out else { return fail("pack needs --out <dir>") };
+    let Some(out) = out else {
+        return fail("pack needs --out <dir>");
+    };
     if roots.is_empty() {
         return fail("pack needs at least one --package <name>");
     }
-    match pack::pack(&Options { roots, cargo_args, out: out.clone() }) {
+    match pack::pack(&Options {
+        roots,
+        cargo_args,
+        out: out.clone(),
+    }) {
         Ok(summary) => {
             let mb = |b: u64| b as f64 / 1_048_576.0;
             eprintln!(
@@ -113,16 +119,28 @@ fn run_exec(args: &[String]) -> ExitCode {
             other => return fail(&format!("unknown argument `{other}`")),
         }
     }
-    let Some((program, program_args)) = command.split_first() else { return fail("exec needs a command after `--`") };
+    let Some((program, program_args)) = command.split_first() else {
+        return fail("exec needs a command after `--`");
+    };
     // The wrapper sits beside this binary.
-    let wrapper = std::env::current_exe().ok().and_then(|exe| Some(exe.parent()?.join(format!("sdk-rustc{}", std::env::consts::EXE_SUFFIX))));
-    let Some(wrapper) = wrapper.filter(|w| w.is_file()) else { return fail("sdk-rustc is not beside cargo-sdk") };
+    let wrapper = std::env::current_exe().ok().and_then(|exe| {
+        Some(
+            exe.parent()?
+                .join(format!("sdk-rustc{}", std::env::consts::EXE_SUFFIX)),
+        )
+    });
+    let Some(wrapper) = wrapper.filter(|w| w.is_file()) else {
+        return fail("sdk-rustc is not beside cargo-sdk");
+    };
     let paths = match std::env::join_paths(&sdks) {
         Ok(paths) => paths,
         Err(error) => return fail(&error.to_string()),
     };
     let mut process = Command::new(program);
-    process.args(program_args).env("RUSTC_WRAPPER", wrapper).env(SDK_ENV, paths);
+    process
+        .args(program_args)
+        .env("RUSTC_WRAPPER", wrapper)
+        .env(SDK_ENV, paths);
     if verbose {
         process.env(VERBOSE_ENV, "1");
     }
@@ -133,12 +151,17 @@ fn run_exec(args: &[String]) -> ExitCode {
 }
 
 fn run_info(args: &[String]) -> ExitCode {
-    let Some(dir) = args.first() else { return fail("info needs an SDK directory") };
+    let Some(dir) = args.first() else {
+        return fail("info needs an SDK directory");
+    };
     match Manifest::read(&PathBuf::from(dir)) {
         Ok(manifest) => {
             let stubs = manifest.units.iter().filter(|u| u.stub.is_some()).count();
             let shared = manifest.units.iter().filter(|u| !u.copy.is_empty()).count();
-            println!("{} units: {stubs} library crates, {shared} shared libraries", manifest.units.len());
+            println!(
+                "{} units: {stubs} library crates, {shared} shared libraries",
+                manifest.units.len()
+            );
             println!("{}", manifest.rustc.lines().next().unwrap_or_default());
             ExitCode::SUCCESS
         }
@@ -172,7 +195,11 @@ fn run_fetch(args: &[String]) -> ExitCode {
     let _ = std::fs::remove_dir_all(&scratch);
     match Manifest::read(&out) {
         Ok(manifest) => {
-            eprintln!("cargo sdk: {repo} {tag}: {} units in {}", manifest.units.len(), out.display());
+            eprintln!(
+                "cargo sdk: {repo} {tag}: {} units in {}",
+                manifest.units.len(),
+                out.display()
+            );
             ExitCode::SUCCESS
         }
         Err(error) => fail(&error),
