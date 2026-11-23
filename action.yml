@@ -34,5 +34,6 @@ runs:
         if [ "$VERSION" != latest ]; then tag_args=("$VERSION"); fi
         gh release download "${tag_args[@]}" --repo Far-Beyond-Pulsar/Cargo-SDK \
           --pattern "cargo-sdk-$platform.tar.gz" --dir "$dir" --clobber
-        tar -xzf "$dir/cargo-sdk-$platform.tar.gz" -C "$dir"
+        # From inside the directory, by bare name: GNU tar reads `D:pathx.tar.gz` as a file on a host called `D`.
+        (cd "$dir" && tar -xzf "cargo-sdk-$platform.tar.gz")
         echo "$dir" >> "$GITHUB_PATH"
