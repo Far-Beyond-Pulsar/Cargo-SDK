@@ -112,9 +112,13 @@ fn a_consumer_builds_from_the_sdk_and_runs() {
     } else {
         "LD_LIBRARY_PATH"
     };
-    let paths =
-        std::env::join_paths([b.join("release").join("deps"), PathBuf::from(libdir.trim())])
-            .unwrap();
+    // Cargo puts the final shared library in `release/` (and, in older layouts, in `release/deps/`).
+    let paths = std::env::join_paths([
+        b.join("release"),
+        b.join("release").join("deps"),
+        PathBuf::from(libdir.trim()),
+    ])
+    .unwrap();
     let run = Command::new(
         b.join("release")
             .join(format!("app{}", std::env::consts::EXE_SUFFIX)),
